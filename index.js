@@ -7,7 +7,7 @@ const app = express();
 
 // Configuração CORS para liberar qualquer origem
 
-const allowedOrigins = [process.env.FRONTEND_URL];
+const allowedOrigins = process.env.FRONTEND_URLS.split(',');
 
 app.use(cors({
   origin: allowedOrigins,
