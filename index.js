@@ -25,9 +25,17 @@ app.use('/api/cart', require('./routes/cart'));
 
 const PORT = process.env.PORT || 3001;
 
-mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+// Conectar ao MongoDB
+mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log('✅ Conectado ao MongoDB Atlas com sucesso!');
-    app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
   })
   .catch(err => console.error('❌ Erro ao conectar ao MongoDB Atlas:', err.message));
+
+// Para desenvolvimento local
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
+}
+
+// Exportar para Vercel
+module.exports = app;
