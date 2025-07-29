@@ -10,7 +10,7 @@ const app = express();
 const allowedOrigins = [process.env.FRONTEND_URL];
 
 app.use(cors({
-  origins: allowedOrigins,
+  origin: allowedOrigins,
   credentials: true, // se estiver usando cookies ou auth com headers
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -26,6 +26,8 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/products', require('./routes/products'));
 app.use('/api/profile', require('./routes/profile'));
 app.use('/api/cart', require('./routes/cart'));
+
+app.options(/.*/, cors());
 
 const PORT = process.env.PORT || 3001;
 
