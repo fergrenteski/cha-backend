@@ -6,11 +6,20 @@ const cors = require('cors');
 const app = express();
 
 // Configuração CORS para liberar qualquer origem
+
+const allowedOrigins = [process.env.FRONTEND_URL];
+
 app.use(cors({
-  origin: '*',
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true, // se estiver usando cookies ou auth com headers
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
 }));
 
 // Configuração para aumentar o limite de payload
