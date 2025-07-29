@@ -10,7 +10,7 @@ const app = express();
 const allowedOrigins = [process.env.FRONTEND_URL];
 
 app.use(cors({
-  origin: allowedOrigins,
+  origins: allowedOrigins,
   credentials: true, // se estiver usando cookies ou auth com headers
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
