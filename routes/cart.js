@@ -8,7 +8,9 @@ const {
   updateQuantity,
   addParticipant,
   removeParticipant,
-  getParticipants
+  getParticipants,
+  checkout,
+  webhook
 } = require('../controllers/cartController');
 
 // Obter carrinho (usuário ou convidado)
@@ -30,5 +32,11 @@ router.post('/clear', clearCart);
 router.get('/participants', getParticipants);
 router.post('/participants/add', addParticipant);
 router.post('/participants/remove', removeParticipant);
+
+// Finalizar compra
+router.post('/checkout', checkout);
+
+// Webhook para notificações do Mercado Pago
+router.post('/webhook', webhook);
 
 module.exports = router;
