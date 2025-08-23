@@ -1,4 +1,6 @@
 const Product = require('../models/Product');
+const Cart = require('../models/Cart');
+const Favorites = require('../models/Favorites');
 const { uploadImage, deleteImage } = require('../utils/cloudinaryHelper');
 
 // Listar todos os produtos
@@ -152,7 +154,8 @@ const updateProduct = async (req, res) => {
 // Excluir produto
 const deleteProduct = async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id);
+    const productId = req.params.id;
+    const product = await Product.findById(productId);
     if (!product) {
       return res.status(404).json({ msg: 'Produto não encontrado' });
     }
@@ -161,11 +164,27 @@ const deleteProduct = async (req, res) => {
     if (product.image) {
       await deleteImage(product.image);
     }
+
+    // Remover o produto de todos os carrinhos
+    await Cart.updateMany(
+      { "products.product": productId },
+      { $pull: { products: { product: productId } } }
+    );
+
+    // Remover o produto de todos os favoritos
+    await Favorites.updateMany(
+      { "products.product": productId },
+      { $pull: { products: { product: productId } } }
+    );
     
-    await Product.findByIdAndDelete(req.params.id);
-    res.json({ msg: 'Produto excluído com sucesso' });
+    // Deletar o produto
+    await Product.findByIdAndDelete(productId);
+    
+    res.json({ 
+      msg: 'Produto excluído com sucesso e removido de todos os carrinhos e favoritos' 
+    });
   } catch (err) {
-    console.error(err);
+    console.error('Erro ao excluir produto:', err);
     res.status(500).json({ msg: 'Erro ao excluir produto' });
   }
 };
