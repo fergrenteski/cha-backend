@@ -90,10 +90,15 @@ const getUserOrders = async (req, res) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const userId = decoded.id;
 
-    const { status, page = 1, limit = 10 } = req.query;
+    const { status, page = 1, limit = 10, admin = false } = req.query;
 
     // Construir filtro
-    const filter = { user: userId };
+    const filter = {}
+
+    // Filtra Admin
+    if(!admin) {
+      filter.user = userId;
+    }
     if (status && ['pending', 'completed', 'cancelled'].includes(status)) {
       filter.status = status;
     }
