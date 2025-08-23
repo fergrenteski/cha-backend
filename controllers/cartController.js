@@ -13,8 +13,6 @@ const getCart = async (req, res) => {
       const token = req.header('Authorization').replace('Bearer ', '');
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       cart = await Cart.findOne({ user: decoded.id }).populate('products.product');
-    } else if (req.query.guestToken) {
-      cart = await Cart.findOne({ guestToken: req.query.guestToken }).populate('products.product');
     }
     
     res.json(cart || { products: [], participants: [] });
@@ -26,7 +24,7 @@ const getCart = async (req, res) => {
 
 // Adicionar produto ao carrinho
 const addToCart = async (req, res) => {
-  const { productId, quantity, guestToken } = req.body;
+  const { productId, quantity } = req.body;
   
   try {
     let cart;
@@ -45,21 +43,9 @@ const addToCart = async (req, res) => {
       
       await cart.save();
       return res.json(cart);
-    } else if (guestToken) {
-      cart = await Cart.findOne({ guestToken }) || new Cart({ guestToken });
-      
-      const idx = cart.products.findIndex(p => p.product.toString() === productId);
-      if (idx > -1) {
-        cart.products[idx].quantity += quantity;
-      } else {
-        cart.products.push({ product: productId, quantity });
-      }
-      
-      await cart.save();
-      return res.json(cart);
     }
     
-    res.status(400).json({ msg: 'Usuário ou guestToken obrigatório' });
+    res.status(400).json({ msg: 'Usuário obrigatório' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ msg: 'Erro ao adicionar produto ao carrinho' });
@@ -68,7 +54,7 @@ const addToCart = async (req, res) => {
 
 // Remover produto do carrinho
 const removeFromCart = async (req, res) => {
-  const { productId, guestToken } = req.body;
+  const { productId } = req.body;
   
   try {
     let cart;
@@ -82,17 +68,8 @@ const removeFromCart = async (req, res) => {
       cart.products = cart.products.filter(p => p.product.toString() !== productId);
       await cart.save();
       return res.json(cart);
-    } else if (guestToken) {
-      cart = await Cart.findOne({ guestToken });
-      
-      if (!cart) return res.status(404).json({ msg: 'Carrinho não encontrado' });
-      
-      cart.products = cart.products.filter(p => p.product.toString() !== productId);
-      await cart.save();
-      return res.json(cart);
     }
-    
-    res.status(400).json({ msg: 'Usuário ou guestToken obrigatório' });
+    res.status(400).json({ msg: 'Usuário obrigatório' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ msg: 'Erro ao remover produto do carrinho' });
@@ -101,7 +78,6 @@ const removeFromCart = async (req, res) => {
 
 // Limpar carrinho
 const clearCart = async (req, res) => {
-  const { guestToken } = req.body;
   
   try {
     let cart;
@@ -116,17 +92,9 @@ const clearCart = async (req, res) => {
       cart.products = [];
       await cart.save();
       return res.json(cart);
-    } else if (guestToken) {
-      cart = await Cart.findOne({ guestToken });
-      
-      if (!cart) return res.status(404).json({ msg: 'Carrinho não encontrado' });
-      
-      cart.products = [];
-      await cart.save();
-      return res.json(cart);
     }
     
-    res.status(400).json({ msg: 'Usuário ou guestToken obrigatório' });
+    res.status(400).json({ msg: 'Usuário obrigatório' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ msg: 'Erro ao limpar carrinho' });
@@ -135,7 +103,7 @@ const clearCart = async (req, res) => {
 
 // Atualizar quantidade de produto no carrinho
 const updateQuantity = async (req, res) => {
-  const { productId, quantity, guestToken } = req.body;
+  const { productId, quantity } = req.body;
   
   try {
     // Validar quantidade
@@ -163,25 +131,9 @@ const updateQuantity = async (req, res) => {
       // Retornar carrinho populado
       await cart.populate('products.product');
       return res.json(cart);
-    } else if (guestToken) {
-      cart = await Cart.findOne({ guestToken });
-      
-      if (!cart) return res.status(404).json({ msg: 'Carrinho não encontrado' });
-
-      const productIndex = cart.products.findIndex(p => p.product.toString() === productId);
-      if (productIndex === -1) {
-        return res.status(404).json({ msg: 'Produto não encontrado no carrinho' });
-      }
-      
-      cart.products[productIndex].quantity = quantity;
-      await cart.save();
-      
-      // Retornar carrinho populado
-      await cart.populate('products.product');
-      return res.json(cart);
     }
-    
-    res.status(400).json({ msg: 'Usuário ou guestToken obrigatório' });
+
+    res.status(400).json({ msg: 'Usuário obrigatório' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ msg: 'Erro ao atualizar quantidade do produto' });
@@ -190,7 +142,7 @@ const updateQuantity = async (req, res) => {
 
 // Adicionar participante ao carrinho
 const addParticipant = async (req, res) => {
-  const { name, guestToken } = req.body;
+  const { name } = req.body;
   
   try {
     if (!name || name.trim() === '') {
@@ -207,14 +159,8 @@ const addParticipant = async (req, res) => {
       if (!cart) {
         cart = new Cart({ user: decoded.id, participants: [] });
       }
-    } else if (guestToken) {
-      cart = await Cart.findOne({ guestToken });
-      
-      if (!cart) {
-        cart = new Cart({ guestToken, participants: [] });
-      }
     } else {
-      return res.status(400).json({ msg: 'Usuário ou guestToken obrigatório' });
+      return res.status(400).json({ msg: 'Usuário obrigatório' });
     }
 
     // Verificar se o participante já existe
@@ -236,7 +182,7 @@ const addParticipant = async (req, res) => {
 
 // Remover participante do carrinho
 const removeParticipant = async (req, res) => {
-  const { name, guestToken } = req.body;
+  const { name } = req.body;
   
   try {
     if (!name || name.trim() === '') {
@@ -249,10 +195,8 @@ const removeParticipant = async (req, res) => {
       const token = req.header('Authorization').replace('Bearer ', '');
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       cart = await Cart.findOne({ user: decoded.id });
-    } else if (guestToken) {
-      cart = await Cart.findOne({ guestToken });
     } else {
-      return res.status(400).json({ msg: 'Usuário ou guestToken obrigatório' });
+      return res.status(400).json({ msg: 'Usuário obrigatório' });
     }
 
     if (!cart) {
@@ -286,10 +230,8 @@ const getParticipants = async (req, res) => {
       const token = req.header('Authorization').replace('Bearer ', '');
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       cart = await Cart.findOne({ user: decoded.id });
-    } else if (req.query.guestToken) {
-      cart = await Cart.findOne({ guestToken: req.query.guestToken });
     } else {
-      return res.status(400).json({ msg: 'Usuário ou guestToken obrigatório' });
+      return res.status(400).json({ msg: 'Usuário obrigatório' });
     }
 
     const participants = cart ? cart.participants : [];
@@ -297,84 +239,6 @@ const getParticipants = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ msg: 'Erro ao buscar participantes' });
-  }
-};
-
-// Migrar carrinho de convidado para usuário logado
-const migrateGuestCart = async (req, res) => {
-  const { guestToken } = req.body;
-  
-  try {
-    if (!guestToken) {
-      return res.status(400).json({ msg: 'Token de convidado obrigatório' });
-    }
-
-    // Verificar se há um token de autorização válido
-    const token = req.header('Authorization')?.replace('Bearer ', '');
-    if (!token) {
-      return res.status(401).json({ msg: 'Token de autenticação obrigatório' });
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const userId = decoded.id;
-
-    // Buscar carrinho do convidado
-    const guestCart = await Cart.findOne({ guestToken }).populate('products.product');
-    
-    if (!guestCart || guestCart.products.length === 0) {
-      return res.json({ msg: 'Nenhum carrinho de convidado para migrar', cart: null });
-    }
-
-    // Buscar ou criar carrinho do usuário
-    let userCart = await Cart.findOne({ user: userId });
-    
-    if (!userCart) {
-      // Se não existe carrinho do usuário, converter o carrinho do convidado
-      guestCart.user = userId;
-      guestCart.guestToken = undefined;
-      await guestCart.save();
-      userCart = guestCart;
-    } else {
-      // Se já existe carrinho do usuário, mesclar os produtos
-      for (const guestProduct of guestCart.products) {
-        const existingProductIndex = userCart.products.findIndex(
-          p => p.product.toString() === guestProduct.product._id.toString()
-        );
-        
-        if (existingProductIndex > -1) {
-          // Produto já existe, somar as quantidades
-          userCart.products[existingProductIndex].quantity += guestProduct.quantity;
-        } else {
-          // Produto não existe, adicionar ao carrinho
-          userCart.products.push({
-            product: guestProduct.product._id,
-            quantity: guestProduct.quantity
-          });
-        }
-      }
-
-      // Mesclar participantes se houver
-      if (guestCart.participants && guestCart.participants.length > 0) {
-        const uniqueParticipants = [...new Set([...userCart.participants, ...guestCart.participants])];
-        userCart.participants = uniqueParticipants;
-      }
-
-      await userCart.save();
-      
-      // Remover carrinho do convidado
-      await Cart.findByIdAndDelete(guestCart._id);
-    }
-
-    // Retornar o carrinho atualizado com produtos populados
-    await userCart.populate('products.product');
-    
-    res.json({ 
-      msg: 'Carrinho migrado com sucesso', 
-      cart: userCart 
-    });
-  } catch (err) {
-    console.error('Erro ao migrar carrinho:', err);
-    res.status(500).json({ msg: 'Erro ao migrar carrinho' });
   }
 };
 
@@ -387,5 +251,4 @@ module.exports = {
   addParticipant,
   removeParticipant,
   getParticipants,
-  migrateGuestCart
 };

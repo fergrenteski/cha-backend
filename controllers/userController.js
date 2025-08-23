@@ -3,8 +3,7 @@ const User = require('../models/User');
 // Obter perfil do usuário
 const getAllUsers = async (req, res) => {
     try {
-        const filter = { isGuest: false }
-        const users = await User.find(filter);
+        const users = await User.find();
         if (!users) return res.status(404).json({ msg: 'Não possui usuários' });
         res.json(users);
     } catch (err) {

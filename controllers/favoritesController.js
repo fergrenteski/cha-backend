@@ -11,8 +11,6 @@ const getFavorites = async (req, res) => {
       const token = req.header('Authorization').replace('Bearer ', '');
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       favorites = await Favorites.findOne({ user: decoded.id }).populate('products.product');
-    } else if (req.query.guestToken) {
-      favorites = await Favorites.findOne({ guestToken: req.query.guestToken }).populate('products.product');
     }
     
     res.json(favorites || { products: [] });
@@ -24,7 +22,7 @@ const getFavorites = async (req, res) => {
 
 // Adicionar produto aos favoritos
 const addToFavorites = async (req, res) => {
-  const { productId, guestToken } = req.body;
+  const { productId } = req.body;
   
   try {
     // Verificar se o produto existe
@@ -50,21 +48,8 @@ const addToFavorites = async (req, res) => {
       await favorites.save();
       await favorites.populate('products.product');
       return res.json(favorites);
-    } else if (guestToken) {
-      favorites = await Favorites.findOne({ guestToken }) || new Favorites({ guestToken });
-      
-      // Verificar se o produto já está nos favoritos
-      const productExists = favorites.products.some(p => p.product.toString() === productId);
-      if (productExists) {
-        return res.status(400).json({ msg: 'Produto já está nos favoritos' });
-      }
-      
-      favorites.products.push({ product: productId });
-      await favorites.save();
-      await favorites.populate('products.product');
-      return res.json(favorites);
     } else {
-      return res.status(400).json({ msg: 'Usuário ou guestToken obrigatório' });
+      return res.status(400).json({ msg: 'Usuário obrigatório' });
     }
   } catch (err) {
     console.error(err);
@@ -74,7 +59,7 @@ const addToFavorites = async (req, res) => {
 
 // Remover produto dos favoritos
 const removeFromFavorites = async (req, res) => {
-  const { productId, guestToken } = req.body;
+  const { productId } = req.body;
   
   try {
     let favorites;
@@ -83,10 +68,8 @@ const removeFromFavorites = async (req, res) => {
       const token = req.header('Authorization').replace('Bearer ', '');
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       favorites = await Favorites.findOne({ user: decoded.id });
-    } else if (guestToken) {
-      favorites = await Favorites.findOne({ guestToken });
     } else {
-      return res.status(400).json({ msg: 'Usuário ou guestToken obrigatório' });
+      return res.status(400).json({ msg: 'Usuário obrigatório' });
     }
 
     if (!favorites) {
@@ -112,7 +95,6 @@ const removeFromFavorites = async (req, res) => {
 
 // Limpar todos os favoritos
 const clearFavorites = async (req, res) => {
-  const { guestToken } = req.body;
   
   try {
     let favorites;
@@ -121,10 +103,8 @@ const clearFavorites = async (req, res) => {
       const token = req.header('Authorization').replace('Bearer ', '');
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       favorites = await Favorites.findOne({ user: decoded.id });
-    } else if (guestToken) {
-      favorites = await Favorites.findOne({ guestToken });
     } else {
-      return res.status(400).json({ msg: 'Usuário ou guestToken obrigatório' });
+      return res.status(400).json({ msg: 'Usuário obrigatório' });
     }
 
     if (!favorites) {
@@ -144,7 +124,6 @@ const clearFavorites = async (req, res) => {
 // Verificar se produto está nos favoritos
 const isProductInFavorites = async (req, res) => {
   const { productId } = req.params;
-  const { guestToken } = req.query;
   
   try {
     let favorites;
@@ -153,10 +132,8 @@ const isProductInFavorites = async (req, res) => {
       const token = req.header('Authorization').replace('Bearer ', '');
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       favorites = await Favorites.findOne({ user: decoded.id });
-    } else if (guestToken) {
-      favorites = await Favorites.findOne({ guestToken });
     } else {
-      return res.status(400).json({ msg: 'Usuário ou guestToken obrigatório' });
+      return res.status(400).json({ msg: 'Usuário obrigatório' });
     }
 
     const isFavorite = favorites ? favorites.products.some(p => p.product.toString() === productId) : false;
@@ -168,80 +145,10 @@ const isProductInFavorites = async (req, res) => {
   }
 };
 
-// Migrar favoritos de convidado para usuário logado
-const migrateGuestFavorites = async (req, res) => {
-  const { guestToken } = req.body;
-  
-  try {
-    if (!guestToken) {
-      return res.status(400).json({ msg: 'Token de convidado obrigatório' });
-    }
-
-    // Verificar se há um token de autorização válido
-    const token = req.header('Authorization')?.replace('Bearer ', '');
-    if (!token) {
-      return res.status(401).json({ msg: 'Token de autenticação obrigatório' });
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const userId = decoded.id;
-
-    // Buscar favoritos do convidado
-    const guestFavorites = await Favorites.findOne({ guestToken }).populate('products.product');
-    
-    if (!guestFavorites || guestFavorites.products.length === 0) {
-      return res.json({ msg: 'Nenhum favorito de convidado para migrar', favorites: null });
-    }
-
-    // Buscar ou criar favoritos do usuário
-    let userFavorites = await Favorites.findOne({ user: userId });
-    
-    if (!userFavorites) {
-      // Se não existe favoritos do usuário, converter os favoritos do convidado
-      guestFavorites.user = userId;
-      guestFavorites.guestToken = undefined;
-      await guestFavorites.save();
-      userFavorites = guestFavorites;
-    } else {
-      // Se já existe favoritos do usuário, mesclar os produtos
-      for (const guestProduct of guestFavorites.products) {
-        const productExists = userFavorites.products.some(
-          p => p.product.toString() === guestProduct.product._id.toString()
-        );
-        
-        if (!productExists) {
-          // Produto não existe nos favoritos, adicionar
-          userFavorites.products.push({
-            product: guestProduct.product._id,
-            addedAt: guestProduct.addedAt
-          });
-        }
-      }
-
-      await userFavorites.save();
-      
-      // Remover favoritos do convidado
-      await Favorites.findByIdAndDelete(guestFavorites._id);
-    }
-
-    // Retornar os favoritos atualizados com produtos populados
-    await userFavorites.populate('products.product');
-    
-    res.json({ 
-      msg: 'Favoritos migrados com sucesso', 
-      favorites: userFavorites 
-    });
-  } catch (err) {
-    console.error('Erro ao migrar favoritos:', err);
-    res.status(500).json({ msg: 'Erro ao migrar favoritos' });
-  }
-};
-
 module.exports = {
   getFavorites,
   addToFavorites,
   removeFromFavorites,
   clearFavorites,
   isProductInFavorites,
-  migrateGuestFavorites
 };

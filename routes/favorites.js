@@ -6,7 +6,6 @@ const {
   removeFromFavorites, 
   clearFavorites,
   isProductInFavorites,
-  migrateGuestFavorites
 } = require('../controllers/favoritesController');
 const auth = require('../middleware/auth');
 
@@ -24,8 +23,5 @@ router.post('/remove', removeFromFavorites);
 
 // Limpar favoritos
 router.post('/clear', clearFavorites);
-
-// Migrar favoritos de convidado para usuário logado
-router.post('/migrate', auth, migrateGuestFavorites);
 
 module.exports = router;

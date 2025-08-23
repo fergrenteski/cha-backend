@@ -9,7 +9,6 @@ const {
   addParticipant,
   removeParticipant,
   getParticipants,
-  migrateGuestCart
 } = require('../controllers/cartController');
 const auth = require('../middleware/auth');
 
@@ -27,9 +26,6 @@ router.post('/remove', removeFromCart);
 
 // Limpar carrinho
 router.post('/clear', clearCart);
-
-// Migrar carrinho de convidado para usuário logado
-router.post('/migrate', auth, migrateGuestCart);
 
 // Gerenciar participantes
 router.get('/participants', getParticipants);

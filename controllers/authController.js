@@ -44,29 +44,7 @@ const login = async (req, res) => {
   }
 };
 
-// Registro de convidado
-const createGuest = async (req, res) => {
-  try {
-    const guest = new User({ 
-      firstName: 'Guest',
-      lastName: 'User',
-      email: `guest_${Date.now()}@mail.com`,
-      phone: '',
-      password: `guest_${Date.now()}`,
-      isGuest: true 
-    });
-    await guest.save();
-    
-    const token = jwt.sign({ id: guest._id, guest: true }, process.env.JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ msg: 'Erro ao criar convidado' });
-  }
-};
-
 module.exports = {
   register,
   login,
-  createGuest
 };
