@@ -26,6 +26,9 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/products', require('./routes/products'));
 app.use('/api/profile', require('./routes/profile'));
 app.use('/api/cart', require('./routes/cart'));
+app.use('/api/favorites', require('./routes/favorites'));
+app.use('/api/orders', require('./routes/orders'));
+app.use('/api/users', require('./routes/user'));
 
 app.options(/.*/, cors());
 

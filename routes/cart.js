@@ -9,9 +9,9 @@ const {
   addParticipant,
   removeParticipant,
   getParticipants,
-  checkout,
-  webhook
+  migrateGuestCart
 } = require('../controllers/cartController');
+const auth = require('../middleware/auth');
 
 // Obter carrinho (usuário ou convidado)
 router.get('/', getCart);
@@ -28,15 +28,12 @@ router.post('/remove', removeFromCart);
 // Limpar carrinho
 router.post('/clear', clearCart);
 
+// Migrar carrinho de convidado para usuário logado
+router.post('/migrate', auth, migrateGuestCart);
+
 // Gerenciar participantes
 router.get('/participants', getParticipants);
 router.post('/participants/add', addParticipant);
 router.post('/participants/remove', removeParticipant);
-
-// Finalizar compra
-router.post('/checkout', checkout);
-
-// Webhook para notificações do Mercado Pago
-router.post('/webhook', webhook);
 
 module.exports = router;

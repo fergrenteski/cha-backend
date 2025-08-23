@@ -1,5 +1,6 @@
 const Cart = require('../models/Cart');
 const Product = require('../models/Product');
+const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const { MercadoPagoConfig, Preference } = require('mercadopago');
 
@@ -299,177 +300,81 @@ const getParticipants = async (req, res) => {
   }
 };
 
-// Finalizar compra - Checkout com Mercado Pago
-const checkout = async (req, res) => {
+// Migrar carrinho de convidado para usuário logado
+const migrateGuestCart = async (req, res) => {
+  const { guestToken } = req.body;
+  
   try {
-    let cart;
+    if (!guestToken) {
+      return res.status(400).json({ msg: 'Token de convidado obrigatório' });
+    }
+
+    // Verificar se há um token de autorização válido
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    if (!token) {
+      return res.status(401).json({ msg: 'Token de autenticação obrigatório' });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const userId = decoded.id;
+
+    // Buscar carrinho do convidado
+    const guestCart = await Cart.findOne({ guestToken }).populate('products.product');
     
-    // Obter carrinho (usuário ou convidado)
-    if (req.header('Authorization')) {
-      const token = req.header('Authorization').replace('Bearer ', '');
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      cart = await Cart.findOne({ user: decoded.id }).populate('products.product');
-    } else if (req.body.guestToken || req.query.guestToken) {
-      const guestToken = req.body.guestToken || req.query.guestToken;
-      cart = await Cart.findOne({ guestToken }).populate('products.product');
+    if (!guestCart || guestCart.products.length === 0) {
+      return res.json({ msg: 'Nenhum carrinho de convidado para migrar', cart: null });
+    }
+
+    // Buscar ou criar carrinho do usuário
+    let userCart = await Cart.findOne({ user: userId });
+    
+    if (!userCart) {
+      // Se não existe carrinho do usuário, converter o carrinho do convidado
+      guestCart.user = userId;
+      guestCart.guestToken = undefined;
+      await guestCart.save();
+      userCart = guestCart;
     } else {
-      return res.status(400).json({ msg: 'Usuário ou guestToken obrigatório' });
-    }
-
-    if (!cart || !cart.products || cart.products.length === 0) {
-      return res.status(400).json({ msg: 'Carrinho vazio' });
-    }
-
-    if (!cart.participants || cart.participants.length === 0) {
-      return res.status(400).json({ msg: 'É necessário ter pelo menos um participante no carrinho' });
-    }
-
-    // Calcular valor total do carrinho
-    let totalValue = 0;
-    const items = [];
-
-    for (const cartItem of cart.products) {
-      const product = cartItem.product;
-      const quantity = cartItem.quantity;
-      const itemTotal = product.price * quantity;
-      totalValue += itemTotal;
-
-      items.push({
-        id: product._id.toString(),
-        title: product.name,
-        description: product.description || '',
-        picture_url: product.image || '',
-        category_id: product.category || 'cha_de_bebe',
-        quantity: quantity,
-        currency_id: 'BRL',
-        unit_price: product.price
-      });
-    }
-
-    // Calcular valor por participante
-    const valuePerParticipant = totalValue / cart.participants.length;
-    const minValuePerParticipant = 100; // R$ 100,00 mínimo por participante
-
-    // Verificar se cada participante contribui com pelo menos R$ 100
-    if (valuePerParticipant < minValuePerParticipant) {
-      return res.status(400).json({ 
-        msg: `Valor por participante deve ser de pelo menos R$ ${minValuePerParticipant.toFixed(2)}. Valor atual: R$ ${valuePerParticipant.toFixed(2)}`,
-        valuePerParticipant: valuePerParticipant.toFixed(2),
-        minValueRequired: minValuePerParticipant,
-        totalValue: totalValue.toFixed(2),
-        participantsCount: cart.participants.length
-      });
-    }
-
-    // Configurar cliente do Mercado Pago
-    if (!process.env.MERCADOPAGO_ACCESS_TOKEN) {
-      return res.status(500).json({ msg: 'Token do Mercado Pago não configurado' });
-    }
-
-    const client = new MercadoPagoConfig({ 
-      accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN,
-      options: { timeout: 5000 }
-    });
-
-    const preference = new Preference(client);
-
-    // Criar preferência de pagamento
-    const preferenceData = {
-      items: items,
-      payer: {
-        name: "Organizador do Chá",
-        email: "organizador@chadebebe.com"
-      },
-      back_urls: {
-        success: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/checkout/success`,
-        failure: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/checkout/failure`,
-        pending: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/checkout/pending`
-      },
-      auto_return: "approved",
-      payment_methods: {
-        excluded_payment_methods: [],
-        excluded_payment_types: [],
-        installments: 12
-      },
-      notification_url: `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/cart/webhook`,
-      statement_descriptor: "CHA DE BEBE",
-      external_reference: cart._id.toString(),
-      expires: true,
-      expiration_date_from: new Date().toISOString(),
-      expiration_date_to: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 horas
-      metadata: {
-        cart_id: cart._id.toString(),
-        participants: cart.participants,
-        participants_count: cart.participants.length,
-        value_per_participant: valuePerParticipant.toFixed(2)
+      // Se já existe carrinho do usuário, mesclar os produtos
+      for (const guestProduct of guestCart.products) {
+        const existingProductIndex = userCart.products.findIndex(
+          p => p.product.toString() === guestProduct.product._id.toString()
+        );
+        
+        if (existingProductIndex > -1) {
+          // Produto já existe, somar as quantidades
+          userCart.products[existingProductIndex].quantity += guestProduct.quantity;
+        } else {
+          // Produto não existe, adicionar ao carrinho
+          userCart.products.push({
+            product: guestProduct.product._id,
+            quantity: guestProduct.quantity
+          });
+        }
       }
-    };
 
-    const response = await preference.create({ body: preferenceData });
+      // Mesclar participantes se houver
+      if (guestCart.participants && guestCart.participants.length > 0) {
+        const uniqueParticipants = [...new Set([...userCart.participants, ...guestCart.participants])];
+        userCart.participants = uniqueParticipants;
+      }
 
-    // Resposta de sucesso
-    res.json({
-      success: true,
-      checkout_url: response.init_point,
-      sandbox_checkout_url: response.sandbox_init_point,
-      preference_id: response.id,
-      total_value: totalValue.toFixed(2),
-      participants_count: cart.participants.length,
-      value_per_participant: valuePerParticipant.toFixed(2),
-      participants: cart.participants,
-      items: items.map(item => ({
-        name: item.title,
-        quantity: item.quantity,
-        price: item.unit_price,
-        total: (item.quantity * item.unit_price).toFixed(2)
-      }))
-    });
-
-  } catch (error) {
-    console.error('Erro no checkout:', error);
-    
-    if (error.message?.includes('MercadoPago')) {
-      return res.status(500).json({ 
-        msg: 'Erro na integração com Mercado Pago',
-        error: error.message
-      });
+      await userCart.save();
+      
+      // Remover carrinho do convidado
+      await Cart.findByIdAndDelete(guestCart._id);
     }
 
-    res.status(500).json({ 
-      msg: 'Erro interno do servidor no checkout',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Erro interno'
+    // Retornar o carrinho atualizado com produtos populados
+    await userCart.populate('products.product');
+    
+    res.json({ 
+      msg: 'Carrinho migrado com sucesso', 
+      cart: userCart 
     });
-  }
-};
-
-// Webhook do Mercado Pago para notificações de pagamento
-const webhook = async (req, res) => {
-  try {
-    const { action, data } = req.body;
-    
-    console.log('Webhook recebido:', { action, data });
-    
-    if (action === 'payment.created' || action === 'payment.updated') {
-      const paymentId = data.id;
-      
-      // Aqui você pode implementar a lógica para verificar o status do pagamento
-      // e atualizar o status do pedido/carrinho conforme necessário
-      
-      console.log(`Pagamento ${action}: ${paymentId}`);
-      
-      // Exemplo de como você pode buscar informações do pagamento:
-      // const client = new MercadoPagoConfig({ accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN });
-      // const payment = new Payment(client);
-      // const paymentInfo = await payment.get({ id: paymentId });
-      
-      res.status(200).json({ received: true });
-    } else {
-      res.status(200).json({ received: true, action: 'not_handled' });
-    }
-    
-  } catch (error) {
-    console.error('Erro no webhook:', error);
-    res.status(500).json({ error: 'Erro interno no webhook' });
+  } catch (err) {
+    console.error('Erro ao migrar carrinho:', err);
+    res.status(500).json({ msg: 'Erro ao migrar carrinho' });
   }
 };
 
@@ -482,6 +387,5 @@ module.exports = {
   addParticipant,
   removeParticipant,
   getParticipants,
-  checkout,
-  webhook
+  migrateGuestCart
 };
