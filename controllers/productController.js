@@ -6,7 +6,7 @@ const { uploadImage, deleteImage } = require('../utils/cloudinaryHelper');
 // Listar todos os produtos
 const getAllProducts = async (req, res) => {
   try {
-    const { category, available, search, page = 1, limit = 20 } = req.query;
+    const { category, available, search, page = 1, limit = 20, sortBy = 'createdAt', order = 'desc' } = req.query;
     let filter = {};
     
     // Filtro por categoria
@@ -30,12 +30,18 @@ const getAllProducts = async (req, res) => {
     // Paginação para melhor performance
     const skip = (page - 1) * limit;
     
+    // Configurar ordenação
+    const sortOrder = order === 'asc' ? 1 : -1;
+    const allowedSortFields = ['createdAt', 'price', 'name', 'category'];
+    const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
+    const sortOptions = { [sortField]: sortOrder };
+    
     // Query otimizada com lean() para melhor performance
     const products = await Product.find(filter)
       .lean() // Retorna objetos JavaScript simples em vez de documentos Mongoose
       .limit(parseInt(limit))
       .skip(skip)
-      .sort({ createdAt: -1 }); // Ordenar por mais recentes
+      .sort(sortOptions); // Ordenar conforme parâmetros
     
     // Contar total apenas se necessário
     const total = await Product.countDocuments(filter);
