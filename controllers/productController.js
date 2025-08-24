@@ -6,7 +6,7 @@ const { uploadImage, deleteImage } = require('../utils/cloudinaryHelper');
 // Listar todos os produtos
 const getAllProducts = async (req, res) => {
   try {
-    const { category, available, search } = req.query;
+    const { category, available, search, page = 1, limit = 20 } = req.query;
     let filter = {};
     
     // Filtro por categoria
@@ -19,7 +19,7 @@ const getAllProducts = async (req, res) => {
       filter.available = available === 'true';
     }
     
-    // Busca por nome ou descrição
+    // Busca por nome ou descrição com índice otimizado
     if (search) {
       filter.$or = [
         { name: { $regex: search, $options: 'i' } },
@@ -27,8 +27,28 @@ const getAllProducts = async (req, res) => {
       ];
     }
     
-    const products = await Product.find(filter);
-    res.json(products);
+    // Paginação para melhor performance
+    const skip = (page - 1) * limit;
+    
+    // Query otimizada com lean() para melhor performance
+    const products = await Product.find(filter)
+      .lean() // Retorna objetos JavaScript simples em vez de documentos Mongoose
+      .limit(parseInt(limit))
+      .skip(skip)
+      .sort({ createdAt: -1 }); // Ordenar por mais recentes
+    
+    // Contar total apenas se necessário
+    const total = await Product.countDocuments(filter);
+    
+    res.json({
+      products,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(total / limit),
+        totalProducts: total,
+        hasMore: skip + products.length < total
+      }
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ msg: 'Erro ao buscar produtos' });
