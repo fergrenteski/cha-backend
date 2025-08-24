@@ -23,22 +23,31 @@ app.use(helmet({
 // Cache da conexão MongoDB para evitar reconexões desnecessárias
 let cachedConnection = null;
 
-// Configuração otimizada do MongoDB
+// Configuração otimizada do MongoDB para Vercel
 const connectDB = async () => {
-  if (cachedConnection) {
+  if (cachedConnection && mongoose.connection.readyState === 1) {
     return cachedConnection;
   }
 
   try {
+    // Configurações específicas para Vercel serverless
     const opts = {
-      bufferCommands: false,
-      maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
-      maxIdleTimeMS: 30000,
-      useNewUrlParser: true,
-      useUnifiedTopology: true
+      bufferCommands: false, // Crítico: desabilitar buffering no Vercel
+      maxPoolSize: 5,        // Reduzir pool para serverless
+      minPoolSize: 1,        // Manter pelo menos 1 conexão
+      serverSelectionTimeoutMS: 10000, // 10s para seleção do servidor
+      socketTimeoutMS: 20000,          // 20s para operações socket
+      connectTimeoutMS: 10000,         // 10s para conectar
+      maxIdleTimeMS: 30000,            // 30s antes de fechar conexão idle
+      heartbeatFrequencyMS: 10000,     // Heartbeat a cada 10s
+      retryWrites: true,
+      retryReads: true
     };
+    
+    // Desconectar conexão anterior se existir
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.disconnect();
+    }
     
     cachedConnection = await mongoose.connect(process.env.MONGO_URI, opts);
     console.log('✅ Conectado ao MongoDB Atlas com sucesso!');
@@ -78,13 +87,32 @@ app.use(generalLimiter);
 app.use(requestLogger);
 app.use(memoryMonitor);
 
-// Middleware para conectar ao DB apenas quando necessário
+// Middleware para conectar ao DB com retry
 app.use(async (req, res, next) => {
-  try {
-    await connectDB();
-    next();
-  } catch (error) {
-    res.status(500).json({ msg: 'Erro de conexão com banco de dados' });
+  let retries = 3;
+  
+  while (retries > 0) {
+    try {
+      // Verificar se a conexão está ativa
+      if (mongoose.connection.readyState !== 1) {
+        await connectDB();
+      }
+      return next();
+    } catch (error) {
+      console.error(`Tentativa de conexão falhou. Tentativas restantes: ${retries - 1}`, error.message);
+      retries--;
+      
+      if (retries === 0) {
+        console.error('Falha ao conectar ao MongoDB após 3 tentativas');
+        return res.status(503).json({ 
+          msg: 'Serviço temporariamente indisponível. Tente novamente em alguns segundos.',
+          error: 'database_connection_failed'
+        });
+      }
+      
+      // Aguardar antes de tentar novamente
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
   }
 });
 
@@ -92,24 +120,43 @@ app.use(async (req, res, next) => {
 app.use(express.json({ 
   limit: '10mb',
   verify: (req, res, buf) => {
-    // Validação rápida do JSON
-    try {
-      JSON.parse(buf);
-    } catch (e) {
-      res.status(400).json({ msg: 'JSON inválido' });
-      return;
+    // Só validar JSON se houver conteúdo no buffer
+    if (buf && buf.length > 0) {
+      try {
+        JSON.parse(buf);
+      } catch (e) {
+        console.error('JSON inválido recebido:', buf.toString());
+        res.status(400).json({ msg: 'JSON inválido' });
+        return;
+      }
     }
   }
 }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'OK', 
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime()
-  });
+// Health check endpoint com verificação de MongoDB
+app.get('/health', async (req, res) => {
+  try {
+    const { checkMongoHealth } = require('./utils/mongoHealth');
+    const mongoHealth = await checkMongoHealth();
+    
+    res.status(mongoHealth.status === 'healthy' ? 200 : 503).json({ 
+      status: mongoHealth.status === 'healthy' ? 'OK' : 'ERROR',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      memory: {
+        used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+        total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024)
+      },
+      database: mongoHealth
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'ERROR',
+      timestamp: new Date().toISOString(),
+      error: error.message
+    });
+  }
 });
 
 // Rotas
@@ -119,6 +166,7 @@ app.use('/api/profile', require('./routes/profile'));
 app.use('/api/cart', require('./routes/cart'));
 app.use('/api/favorites', require('./routes/favorites'));
 app.use('/api/orders', require('./routes/orders'));
+app.use('/api/users', require('./routes/user'));
 
 app.options(/.*/, cors());
 
