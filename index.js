@@ -41,17 +41,27 @@ app.options(/.*/, cors());
 
 const PORT = process.env.PORT || 3001;
 
-// Conectar ao MongoDB - configuração simples
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => {
+// Conectar ao MongoDB e só iniciar servidor após conexão
+const startServer = async () => {
+  try {
+    await mongoose.connect(process.env.MONGO_URI, {
+      serverSelectionTimeoutMS: 5000, // Timeout para seleção do servidor
+      socketTimeoutMS: 45000, // Timeout para operações
+    });
     console.log('✅ Conectado ao MongoDB Atlas com sucesso!');
-  })
-  .catch(err => console.error('❌ Erro ao conectar ao MongoDB Atlas:', err.message));
+    
+    // Para desenvolvimento local - só inicia após conectar
+    if (process.env.NODE_ENV !== 'production') {
+      app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
+    }
+  } catch (err) {
+    console.error('❌ Erro ao conectar ao MongoDB Atlas:', err.message);
+    process.exit(1); // Termina o processo se não conseguir conectar
+  }
+};
 
-// Para desenvolvimento local
-if (process.env.NODE_ENV !== 'production') {
-  app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
-}
+// Iniciar servidor
+startServer();
 
 // Exportar para Vercel
 module.exports = app;
