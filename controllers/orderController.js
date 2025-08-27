@@ -14,7 +14,7 @@ const createOrder = async (req, res) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const userId = decoded.id;
 
-    const { notes, orderNumber } = req.body;
+    const { notes, orderNumber, payment } = req.body;
 
     // Buscar carrinho do usuário
     const cart = await Cart.findOne({ user: userId }).populate('products.product');
@@ -48,6 +48,10 @@ const createOrder = async (req, res) => {
       });
     }
 
+    // Calcular valores finais de pagamento
+    const subtotalValue = parseFloat(payment?.subtotal) || totalAmount;
+    const totalValue = parseFloat(payment?.total) || totalAmount;
+
     // Criar pedido
     const order = new Order({
       user: userId,
@@ -56,7 +60,15 @@ const createOrder = async (req, res) => {
       participants: cart.participants || [],
       totalAmount,
       notes,
-      status: 'pending'
+      status: 'pending',
+      payment: {
+        method: payment?.method || 'pix',
+        installments: parseInt(payment?.installments) || 1,
+        rate: parseFloat(payment?.rate) || 0,
+        fee: parseFloat(payment?.fee) || 0,
+        subtotal: isNaN(subtotalValue) ? totalAmount : subtotalValue,
+        total: isNaN(totalValue) ? totalAmount : totalValue
+      }
     });
 
     await order.save();

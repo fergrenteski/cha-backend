@@ -45,6 +45,38 @@ const OrderSchema = new mongoose.Schema({
     min: 0
   },
   notes: String,
+  payment: {
+    method: {
+      type: String,
+      enum: ['pix', 'credit_card', 'debit_card', 'cash'],
+      default: 'pix'
+    },
+    installments: {
+      type: Number,
+      default: 1,
+      min: 1
+    },
+    rate: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    fee: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    subtotal: {
+      type: Number,
+      required: true,
+      min: 0
+    },
+    total: {
+      type: Number,
+      required: true,
+      min: 0
+    }
+  },
   cancelReason: String,
   completedAt: Date
 }, {
