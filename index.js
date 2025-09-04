@@ -35,7 +35,7 @@ app.use('/api/profile', require('./routes/profile'));
 app.use('/api/cart', require('./routes/cart'));
 app.use('/api/favorites', require('./routes/favorites'));
 app.use('/api/orders', require('./routes/orders'));
-// app.use('/api/users', require('./routes/user')); // Comentado temporariamente
+app.use('/api/users', require('./routes/user')); // Comentado temporariamente
 
 app.options(/.*/, cors());
 
