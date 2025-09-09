@@ -153,12 +153,10 @@ const getOrderDetails = async (req, res) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const userId = decoded.id;
     const { orderId } = req.params;
 
     const order = await Order.findOne({ 
-      _id: orderId, 
-      user: userId
+      _id: orderId,
     }).populate('products.product user', 'firstName lastName email phone cart price, description');
 
     if (!order) {
