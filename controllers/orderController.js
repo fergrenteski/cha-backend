@@ -328,6 +328,65 @@ const getOrderAdminStats = async (req, res) => {
   }
 };
 
+// Deletar pedido
+const deleteOrder = async (req, res) => {
+  try {
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    if (!token) {
+      return res.status(401).json({ msg: 'Token de autenticação obrigatório' });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const userId = decoded.id;
+    const { orderId } = req.params;
+    const { admin = false } = req.query;
+
+    // Construir filtro baseado se é admin ou não
+    const filter = { _id: orderId };
+    if (!admin) {
+      filter.user = userId; // Usuários normais só podem deletar seus próprios pedidos
+    }
+
+    const order = await Order.findOne(filter);
+
+    if (!order) {
+      return res.status(404).json({ msg: 'Pedido não encontrado' });
+    }
+
+    // Verificar se pedido pode ser deletado
+    // Apenas pedidos cancelados ou pendentes podem ser deletados
+    if (!['cancelled', 'pending'].includes(order.status)) {
+      return res.status(400).json({ 
+        msg: 'Apenas pedidos cancelados ou pendentes podem ser deletados' 
+      });
+    }
+
+    // Se o pedido estiver pendente e não for admin, apenas cancelar ao invés de deletar
+    if (order.status === 'pending' && !admin) {
+      order.status = 'cancelled';
+      order.cancelReason = 'Pedido cancelado pelo cliente';
+      await order.save();
+
+      return res.json({
+        msg: 'Pedido cancelado com sucesso (pedidos pendentes são cancelados ao invés de deletados)',
+        order
+      });
+    }
+
+    // Deletar o pedido
+    await Order.findByIdAndDelete(orderId);
+
+    res.json({
+      msg: 'Pedido deletado com sucesso',
+      deletedOrderId: orderId
+    });
+
+  } catch (err) {
+    console.error('Erro ao deletar pedido:', err);
+    res.status(500).json({ msg: 'Erro ao deletar pedido' });
+  }
+};
+
 module.exports = {
   createOrder,
   getUserOrders,
@@ -335,5 +394,6 @@ module.exports = {
   cancelOrder,
   updateOrderStatus,
   getOrderStats,
-  getOrderAdminStats
+  getOrderAdminStats,
+  deleteOrder
 };

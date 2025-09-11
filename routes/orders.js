@@ -7,7 +7,8 @@ const {
   cancelOrder,
   updateOrderStatus,
   getOrderStats,
-  getOrderAdminStats
+  getOrderAdminStats,
+  deleteOrder
 } = require('../controllers/orderController');
 const auth = require('../middleware/auth');
 
@@ -25,6 +26,9 @@ router.get('/stats/admin', auth, getOrderAdminStats);
 
 // Obter detalhes de um pedido específico
 router.get('/:orderId', auth, getOrderDetails);
+
+// Obter detalhes de um pedido específico
+router.delete('/:orderId', auth, deleteOrder);
 
 // Cancelar pedido
 router.put('/:orderId/cancel', auth, cancelOrder);
