@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const Order = require('../models/Order');
+const Cart = require('../models/Cart');
 
 // Obter perfil do usuário
 const getAllUsers = async (req, res) => {
@@ -29,33 +30,79 @@ const getAllUsers = async (req, res) => {
             .skip(skip)
             .limit(parseInt(limit));
         
-        // Verificar pedidos concluídos para marcar usuários confirmados
+        // Verificar pedidos e participantes para cada usuário
         const usersWithConfirmedStatus = await Promise.all(
             users.map(async (user) => {
                 const userObj = user.toObject();
                 
-                // Buscar pedidos concluídos do usuário
-                const completedOrders = await Order.find({
-                    user: user._id,
-                    status: 'completed'
-                });
+                // Buscar todos os pedidos do usuário (para verificar confirmação)
+                const userOrders = await Order.find({ user: user._id });
                 
-                // Verificar se algum pedido tem mais de R$ 100 por participante
-                let isConfirmed = false;
+                // Buscar carrinho do usuário (para participantes ativos)
+                const userCart = await Cart.findOne({ user: user._id });
                 
-                for (const order of completedOrders) {
-                    const totalParticipants = (order.participants?.length || 0) + 1; // +1 para incluir o próprio usuário
-                    const valuePerParticipant = order.totalAmount / totalParticipants;
-                    
-                    if (valuePerParticipant >= 100) {
-                        isConfirmed = true;
-                        break;
+                // Verificar se usuário está confirmado
+                let isUserConfirmed = false;
+                for (const order of userOrders) {
+                    if (order.status === 'completed') {
+                        const totalParticipants = (order.participants?.length || 0) + 1;
+                        const valuePerParticipant = order.totalAmount / totalParticipants;
+                        if (valuePerParticipant >= 100) {
+                            isUserConfirmed = true;
+                            break;
+                        }
                     }
                 }
                 
+                // Coletar participantes únicos do usuário
+                const userParticipantsMap = new Map();
+                
+                // Participantes do carrinho ativo
+                if (userCart?.participants) {
+                    userCart.participants.forEach(participantName => {
+                        userParticipantsMap.set(participantName, {
+                            name: participantName,
+                            confirmed: false,
+                            source: 'cart'
+                        });
+                    });
+                }
+                
+                // Participantes dos pedidos e verificar confirmação
+                userOrders.forEach(order => {
+                    if (order.participants) {
+                        order.participants.forEach(participantName => {
+                            const totalParticipants = (order.participants?.length || 0) + 1;
+                            const valuePerParticipant = order.totalAmount / totalParticipants;
+                            const isConfirmed = order.status === 'completed' && valuePerParticipant >= 100;
+                            
+                            if (userParticipantsMap.has(participantName)) {
+                                // Atualizar confirmação se já existe
+                                const existing = userParticipantsMap.get(participantName);
+                                userParticipantsMap.set(participantName, {
+                                    ...existing,
+                                    confirmed: existing.confirmed || isConfirmed,
+                                    source: existing.source === 'cart' ? 'both' : 'order'
+                                });
+                            } else {
+                                // Adicionar novo participante
+                                userParticipantsMap.set(participantName, {
+                                    name: participantName,
+                                    confirmed: isConfirmed,
+                                    source: 'order'
+                                });
+                            }
+                        });
+                    }
+                });
+                
+                // Converter Map para Array
+                const userParticipants = Array.from(userParticipantsMap.values());
+                
                 return {
                     ...userObj,
-                    confirmed: isConfirmed
+                    confirmed: isUserConfirmed,
+                    participants: userParticipants
                 };
             })
         );
@@ -63,7 +110,13 @@ const getAllUsers = async (req, res) => {
         // Contar total de usuários
         const totalUsers = await User.countDocuments(filter);
         
+        // Calcular total de participantes únicos
+        const totalParticipants = usersWithConfirmedStatus.reduce((total, user) => 
+            total + user.participants.length, 0
+        );
+        
         console.log(`${usersWithConfirmedStatus.length} usuários encontrados (${totalUsers} total)`);
+        console.log(`${totalParticipants} participantes associados aos usuários`);
         
         res.status(200).json({
             users: usersWithConfirmedStatus,
